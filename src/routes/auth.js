@@ -44,7 +44,7 @@ router.post('/register', async (req, res) => {
     );
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName },
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role || 'customer' },
       token,
     });
   } catch (err) {
@@ -83,8 +83,9 @@ router.post('/login', async (req, res) => {
 
     const firstName = user.firstName ?? (user.name || '').split(' ')[0] ?? '';
     const lastName = user.lastName ?? (user.name || '').split(' ').slice(1).join(' ') ?? '';
+    const role = user.role === 'admin' ? 'admin' : 'customer';
     res.json({
-      user: { id: userId, email: user.email, firstName, lastName },
+      user: { id: userId, email: user.email, firstName, lastName, role },
       token,
     });
   } catch (err) {
@@ -97,10 +98,11 @@ router.post('/login', async (req, res) => {
  * GET /auth/me — current user (requires Authorization: Bearer <token>)
  */
 router.get('/me', requireAuth, (req, res) => {
-  const { id, email, firstName, lastName, name } = req.user;
+  const { id, email, firstName, lastName, name, role } = req.user;
   const first = firstName ?? (name || '').split(' ')[0] ?? '';
   const last = lastName ?? (name || '').split(' ').slice(1).join(' ') ?? '';
-  res.json({ user: { id, email, firstName: first, lastName: last } });
+  const userRole = role === 'admin' ? 'admin' : 'customer';
+  res.json({ user: { id, email, firstName: first, lastName: last, role: userRole } });
 });
 
 export default router;

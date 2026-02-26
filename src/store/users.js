@@ -16,6 +16,7 @@ export async function create(data) {
     password: data.password,
     firstName: data.firstName?.trim() || '',
     lastName: data.lastName?.trim() || '',
+    role: data.role === 'admin' ? 'admin' : 'customer',
   });
   return { ...user.toObject(), id: user._id.toString() };
 }
