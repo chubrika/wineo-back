@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { connectDb } from './db.js';
 import authRoutes from './routes/auth.js';
 import categoryRoutes from './routes/categories.js';
+import filterRoutes from './routes/filters.js';
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.get('/health', (req, res) => {
 
 app.use('/auth', authRoutes);
 app.use('/categories', categoryRoutes);
+app.use('/filters', filterRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });

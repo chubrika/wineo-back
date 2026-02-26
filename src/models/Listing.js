@@ -48,6 +48,22 @@ const listingSchema = new mongoose.Schema(
       },
     },
 
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Category',
+      index: true,
+    },
+
+    attributes: {
+      type: [
+        {
+          filterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Filter', required: true },
+          value: { type: mongoose.Schema.Types.Mixed, required: true },
+        },
+      ],
+      default: [],
+    },
+
     price: {
       type: Number,
       required: [true, 'Price is required'],
@@ -152,6 +168,9 @@ listingSchema.index({ ownerId: 1, status: 1 });
 
 // Compound index for common listing list query: active + type + category + sort
 listingSchema.index({ status: 1, type: 1, 'category.slug': 1, createdAt: -1 });
+
+listingSchema.index({ categoryId: 1 });
+listingSchema.index({ categoryId: 1, 'attributes.filterId': 1, 'attributes.value': 1 });
 
 // Ensure rentPeriod is cleared when type is 'sell'; ensure set when type is 'rent'
 listingSchema.pre('save', function (next) {

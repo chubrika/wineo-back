@@ -30,6 +30,8 @@ router.get('/', async (req, res) => {
       description: c.description || '',
       active: c.active,
       parentId: c.parentId ? c.parentId.toString() : null,
+      level: c.level ?? 0,
+      path: (c.path || []).map((id) => id.toString()),
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
     }));
@@ -59,6 +61,8 @@ router.get('/:id', async (req, res) => {
       description: category.description || '',
       active: category.active,
       parentId: category.parentId ? category.parentId.toString() : null,
+      level: category.level ?? 0,
+      path: (category.path || []).map((id) => id.toString()),
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     });
@@ -121,6 +125,8 @@ router.post('/', requireAuth, async (req, res) => {
       description: category.description || '',
       active: category.active,
       parentId: category.parentId ? category.parentId.toString() : null,
+      level: category.level ?? 0,
+      path: (category.path || []).map((id) => id.toString()),
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     });
@@ -204,6 +210,8 @@ router.put('/:id', requireAuth, async (req, res) => {
       description: category.description || '',
       active: category.active,
       parentId: category.parentId ? category.parentId.toString() : null,
+      level: category.level ?? 0,
+      path: (category.path || []).map((id) => id.toString()),
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     });
