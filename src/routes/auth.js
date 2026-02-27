@@ -9,19 +9,28 @@ const router = Router();
 
 /**
  * POST /auth/register
- * Body: { email, password, firstName, lastName }
+ * Body: { email, password, userType, firstName?, lastName?, businessName? }
+ * - physical: firstName, lastName required
+ * - business: businessName required
  */
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
+    const { email, password, firstName, lastName, businessName, userType } = req.body;
     if (!email?.trim() || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
-    if (!firstName?.trim() || !lastName?.trim()) {
-      return res.status(400).json({ error: 'First name and last name are required' });
-    }
     if (password.length < 6) {
       return res.status(400).json({ error: 'Password must be at least 6 characters' });
+    }
+    const isBusiness = userType === 'business';
+    if (isBusiness) {
+      if (!businessName?.trim()) {
+        return res.status(400).json({ error: 'Business name is required' });
+      }
+    } else {
+      if (!firstName?.trim() || !lastName?.trim()) {
+        return res.status(400).json({ error: 'First name and last name are required' });
+      }
     }
 
     const existing = await findByEmail(email);
@@ -33,8 +42,10 @@ router.post('/register', async (req, res) => {
     const user = await create({
       email: email.trim().toLowerCase(),
       password: hashedPassword,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
+      firstName: isBusiness ? '' : firstName.trim(),
+      lastName: isBusiness ? '' : lastName.trim(),
+      businessName: isBusiness ? businessName.trim() : '',
+      userType: isBusiness ? 'business' : 'physical',
     });
 
     const token = jwt.sign(
@@ -44,7 +55,7 @@ router.post('/register', async (req, res) => {
     );
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role || 'customer' },
+      user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, businessName: user.businessName || '', role: user.role || 'customer', phone: user.phone || '', userType: user.userType || 'physical' },
       token,
     });
   } catch (err) {
@@ -85,7 +96,7 @@ router.post('/login', async (req, res) => {
     const lastName = user.lastName ?? (user.name || '').split(' ').slice(1).join(' ') ?? '';
     const role = user.role === 'admin' ? 'admin' : 'customer';
     res.json({
-      user: { id: userId, email: user.email, firstName, lastName, role },
+      user: { id: userId, email: user.email, firstName: user.firstName ?? '', lastName: user.lastName ?? '', businessName: user.businessName || '', role, phone: user.phone || '', userType: user.userType || 'physical' },
       token,
     });
   } catch (err) {
@@ -98,11 +109,40 @@ router.post('/login', async (req, res) => {
  * GET /auth/me — current user (requires Authorization: Bearer <token>)
  */
 router.get('/me', requireAuth, (req, res) => {
-  const { id, email, firstName, lastName, name, role } = req.user;
+  const { id, email, firstName, lastName, name, role, phone, userType, businessName } = req.user;
   const first = firstName ?? (name || '').split(' ')[0] ?? '';
   const last = lastName ?? (name || '').split(' ').slice(1).join(' ') ?? '';
   const userRole = role === 'admin' ? 'admin' : 'customer';
-  res.json({ user: { id, email, firstName: first, lastName: last, role: userRole } });
+  res.json({ user: { id, email, firstName: first, lastName: last, businessName: businessName || '', role: userRole, phone: phone || '', userType: userType || 'physical' } });
+});
+
+/**
+ * PATCH /auth/me — update current user profile (phone, firstName, lastName, businessName)
+ */
+router.patch('/me', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const { updateById } = await import('../store/users.js');
+    const updated = await updateById(userId, req.body);
+    if (!updated) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({
+      user: {
+        id: updated.id,
+        email: updated.email,
+        firstName: updated.firstName || '',
+        lastName: updated.lastName || '',
+        businessName: updated.businessName || '',
+        role: updated.role || 'customer',
+        phone: updated.phone || '',
+        userType: updated.userType || 'physical',
+      },
+    });
+  } catch (err) {
+    console.error('Update me error:', err);
+    res.status(500).json({ error: 'Update failed' });
+  }
 });
 
 export default router;

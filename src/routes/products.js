@@ -21,6 +21,19 @@ function slugFromTitle(title) {
 
 function toListingJson(doc) {
   const d = doc.toObject ? doc.toObject() : doc;
+  const ownerId = d.ownerId && typeof d.ownerId === 'object' && d.ownerId._id
+    ? d.ownerId._id.toString()
+    : d.ownerId?.toString();
+  let ownerName;
+  let ownerType;
+  if (d.ownerId && typeof d.ownerId === 'object') {
+    ownerType = d.ownerId.userType === 'business' ? 'business' : 'physical';
+    if (d.ownerId.userType === 'business' && d.ownerId.businessName) {
+      ownerName = d.ownerId.businessName.trim();
+    } else {
+      ownerName = [d.ownerId.firstName, d.ownerId.lastName].filter(Boolean).join(' ').trim() || undefined;
+    }
+  }
   return {
     id: d._id.toString(),
     _id: d._id.toString(),
@@ -44,7 +57,9 @@ function toListingJson(doc) {
     specifications: d.specifications || {},
     location: d.location,
 
-    ownerId: d.ownerId?.toString(),
+    ownerId: ownerId || undefined,
+    ownerName: ownerName || undefined,
+    ownerType: ownerType || undefined,
     status: d.status,
 
     isFeatured: d.isFeatured,
@@ -82,6 +97,7 @@ router.get('/', async (req, res) => {
     }
 
     const list = await Listing.find(filter)
+      .populate('ownerId', 'firstName lastName businessName userType')
       .sort({ createdAt: -1 })
       .skip(Number(skip))
       .limit(Math.min(Number(limit), 100))
@@ -111,9 +127,9 @@ router.get('/slug/:slug', async (req, res) => {
     const { type } = req.query;
     let filter = { slug, status: 'active' };
     if (type === 'sell' || type === 'rent') filter.type = type;
-    let listing = await Listing.findOne(filter).lean();
+    let listing = await Listing.findOne(filter).populate('ownerId', 'firstName lastName businessName userType').lean();
     if (!listing && (type === 'sell' || type === 'rent')) {
-      listing = await Listing.findOne({ slug, status: 'active' }).lean();
+      listing = await Listing.findOne({ slug, status: 'active' }).populate('ownerId', 'firstName lastName businessName userType').lean();
     }
     if (!listing) {
       return res.status(404).json({ error: 'Product not found' });
@@ -129,10 +145,29 @@ router.get('/slug/:slug', async (req, res) => {
  * GET /products/:id
  * Get one product by id
  */
+router.get('/mine', requireAuth, async (req, res) => {
+  try {
+    const ownerId = req.user._id || new mongoose.Types.ObjectId(req.user.id);
+    const list = await Listing.find({ ownerId })
+      .populate('ownerId', 'firstName lastName businessName userType')
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
+    res.json(list.map((d) => toListingJson({ ...d })));
+  } catch (err) {
+    console.error('My products list error:', err);
+    res.status(500).json({ error: 'Failed to list your products' });
+  }
+});
+
+/**
+ * GET /products/:id
+ * Get one product by id
+ */
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const listing = await Listing.findById(id).lean();
+    const listing = await Listing.findById(id).populate('ownerId', 'firstName lastName businessName userType').lean();
     if (!listing) {
       return res.status(404).json({ error: 'Product not found' });
     }
