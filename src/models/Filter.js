@@ -43,7 +43,7 @@ const filterSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Category',
       required: [true, 'Category is required'],
-      index: true,
+      // index omitted: compound indexes below use categoryId as leftmost prefix
     },
     applyToChildren: {
       type: Boolean,

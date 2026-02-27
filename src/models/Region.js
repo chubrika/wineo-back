@@ -24,6 +24,5 @@ const regionSchema = new mongoose.Schema(
   }
 );
 
-regionSchema.index({ slug: 1 }, { unique: true });
-
+// slug: unique index is already created by schema option unique: true
 export const Region = mongoose.model('Region', regionSchema);

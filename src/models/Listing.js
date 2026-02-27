@@ -157,7 +157,7 @@ const listingSchema = new mongoose.Schema(
 );
 
 // Indexes for filtering, search, and ElasticSearch sync
-listingSchema.index({ slug: 1 }, { unique: true });
+// slug: unique index is already created by schema option unique: true
 listingSchema.index({ type: 1 });
 listingSchema.index({ 'category.slug': 1 });
 listingSchema.index({ 'location.region': 1 });
@@ -169,7 +169,7 @@ listingSchema.index({ ownerId: 1, status: 1 });
 // Compound index for common listing list query: active + type + category + sort
 listingSchema.index({ status: 1, type: 1, 'category.slug': 1, createdAt: -1 });
 
-listingSchema.index({ categoryId: 1 });
+// categoryId: single-field index already created by schema option index: true
 listingSchema.index({ categoryId: 1, 'attributes.filterId': 1, 'attributes.value': 1 });
 
 // Ensure rentPeriod is cleared when type is 'sell'; ensure set when type is 'rent'

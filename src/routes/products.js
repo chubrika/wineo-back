@@ -76,7 +76,10 @@ router.get('/', async (req, res) => {
 
     if (status) filter.status = status;
     if (type) filter.type = type;
-    if (categorySlug) filter['category.slug'] = categorySlug;
+    if (categorySlug) {
+      const slug = typeof categorySlug === 'string' ? categorySlug.trim().toLowerCase() : '';
+      if (slug) filter['category.slug'] = slug;
+    }
 
     const list = await Listing.find(filter)
       .sort({ createdAt: -1 })
@@ -88,6 +91,37 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('Products list error:', err);
     res.status(500).json({ error: 'Failed to list products' });
+  }
+});
+
+/**
+ * GET /products/slug/:slug
+ * Get one product (listing) by URL slug (active only). Optionally filter by ?type=sell|rent.
+ * Finds by slug + status first; if type is provided and no match, tries without type so
+ * the same slug can be resolved and the frontend can redirect to the correct section.
+ * Must be before /:id so "slug" is not treated as id.
+ */
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const rawSlug = req.params.slug;
+    const slug = typeof rawSlug === 'string' ? rawSlug.trim().toLowerCase() : '';
+    if (!slug) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    const { type } = req.query;
+    let filter = { slug, status: 'active' };
+    if (type === 'sell' || type === 'rent') filter.type = type;
+    let listing = await Listing.findOne(filter).lean();
+    if (!listing && (type === 'sell' || type === 'rent')) {
+      listing = await Listing.findOne({ slug, status: 'active' }).lean();
+    }
+    if (!listing) {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+    res.json(toListingJson(listing));
+  } catch (err) {
+    console.error('Product get by slug error:', err);
+    res.status(500).json({ error: 'Failed to get product' });
   }
 });
 

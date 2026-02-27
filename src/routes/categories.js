@@ -44,6 +44,40 @@ router.get('/', async (req, res) => {
 });
 
 /**
+ * GET /categories/slug/:slug
+ * Get one category by URL slug (active only). Must be before /:id so "slug" is not treated as id.
+ * Slug is normalized to lowercase to match DB (schema has lowercase: true).
+ */
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const rawSlug = req.params.slug;
+    const slug = typeof rawSlug === 'string' ? rawSlug.trim().toLowerCase() : '';
+    if (!slug) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    const category = await Category.findOne({ slug, active: true }).lean();
+    if (!category) {
+      return res.status(404).json({ error: 'Category not found' });
+    }
+    res.json({
+      id: category._id.toString(),
+      name: category.name,
+      slug: category.slug,
+      description: category.description || '',
+      active: category.active,
+      parentId: category.parentId ? category.parentId.toString() : null,
+      level: category.level ?? 0,
+      path: (category.path || []).map((id) => id.toString()),
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    });
+  } catch (err) {
+    console.error('Category get by slug error:', err);
+    res.status(500).json({ error: 'Failed to get category' });
+  }
+});
+
+/**
  * GET /categories/:id
  * Get one category by id
  */
