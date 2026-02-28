@@ -11,7 +11,7 @@ export const config = {
   port: Number(process.env.PORT) || 4000,
   jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
   corsOrigin,
-  mongodbUri: process.env.MONGODB_URI || '',
+  mongodbUri: process.env.MONGODB_URI || 'mongodb+srv://user:password@cluster0.xxxxx.mongodb.net/wineo?retryWrites=true&w=majority',
   // Cloudflare R2 (S3-compatible)
   r2: {
     accountId: process.env.R2_ACCOUNT_ID || '',
