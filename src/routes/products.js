@@ -8,6 +8,7 @@ import {
   isPromotionActive,
   normalizePromotionInput,
 } from '../utils/promotion.js';
+import { getPresignedUploadUrls, processProductImages, processProductImagesAppend } from '../lib/r2.js';
 
 const router = Router();
 
@@ -216,6 +217,29 @@ router.get('/mine', requireAuth, async (req, res) => {
 });
 
 /**
+ * POST /products/upload/presign
+ * Get presigned PUT URLs for uploading product images to R2 temp folder.
+ * Query or body: count (1–20). Returns { uploads: [{ key, uploadUrl }] }.
+ */
+router.post('/upload/presign', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id || req.user._id?.toString();
+    if (!userId) {
+      return res.status(401).json({ error: 'User id required' });
+    }
+    const count = Math.min(
+      Math.max(1, parseInt(req.query.count || req.body?.count, 10) || 1),
+      20
+    );
+    const uploads = await getPresignedUploadUrls(userId, count);
+    res.json({ uploads });
+  } catch (err) {
+    console.error('Presign upload error:', err);
+    res.status(500).json({ error: err.message || 'Failed to get upload URLs' });
+  }
+});
+
+/**
  * GET /products/:id
  * Get one product by id
  */
@@ -324,6 +348,9 @@ router.post('/', requireAuth, async (req, res) => {
 
     const images = Array.isArray(body.images) ? body.images.filter((u) => typeof u === 'string' && u.trim()) : [];
     const thumbnail = typeof body.thumbnail === 'string' && body.thumbnail.trim() ? body.thumbnail.trim() : images[0] || '';
+    const tempImageKeys = Array.isArray(body.tempImageKeys)
+      ? body.tempImageKeys.filter((k) => typeof k === 'string' && k.startsWith('temp/products/'))
+      : [];
 
     const specifications = body.specifications && typeof body.specifications === 'object' ? body.specifications : {};
     const status = body.status || 'active';
@@ -344,8 +371,8 @@ router.post('/', requireAuth, async (req, res) => {
       currency,
       priceType,
       rentPeriod: type === 'rent' ? rentPeriod : undefined,
-      images,
-      thumbnail: thumbnail || undefined,
+      images: images.length > 0 ? images : [],
+      thumbnail: thumbnail || (images[0] || undefined),
       specifications,
       location: { region: location.region.trim(), city: location.city.trim() },
       ownerId,
@@ -355,6 +382,22 @@ router.post('/', requireAuth, async (req, res) => {
       promotionType,
       promotionExpiresAt,
     });
+
+    if (tempImageKeys.length > 0) {
+      try {
+        const productId = listing._id.toString();
+        const { thumbnailUrl, imageUrls } = await processProductImages(productId, tempImageKeys);
+        listing.images = imageUrls;
+        listing.thumbnail = thumbnailUrl || imageUrls[0] || listing.thumbnail;
+        await listing.save();
+      } catch (imgErr) {
+        console.error('Product image processing error:', imgErr);
+        await Listing.deleteOne({ _id: listing._id });
+        return res.status(500).json({
+          error: 'Product created but image processing failed. Please try again.',
+        });
+      }
+    }
 
     res.status(201).json(toListingJson(listing));
   } catch (err) {
@@ -456,6 +499,24 @@ router.put('/:id', requireAuth, async (req, res) => {
     }
     if (body.thumbnail !== undefined) {
       listing.thumbnail = typeof body.thumbnail === 'string' && body.thumbnail.trim() ? body.thumbnail.trim() : listing.images?.[0];
+    }
+
+    const tempImageKeys = Array.isArray(body.tempImageKeys)
+      ? body.tempImageKeys.filter((k) => typeof k === 'string' && k.startsWith('temp/products/'))
+      : [];
+    if (tempImageKeys.length > 0) {
+      try {
+        const existingImages = listing.images && listing.images.length > 0 ? listing.images : [];
+        const existingCount = Array.isArray(body.images) ? body.images.length : existingImages.length;
+        const newUrls = await processProductImagesAppend(id, tempImageKeys, existingCount);
+        listing.images = [...(Array.isArray(body.images) ? body.images.filter((u) => typeof u === 'string' && u.trim()) : existingImages), ...newUrls];
+        if (!listing.thumbnail && listing.images.length > 0) {
+          listing.thumbnail = listing.images[0];
+        }
+      } catch (imgErr) {
+        console.error('Product image append error:', imgErr);
+        return res.status(500).json({ error: 'Image processing failed. Please try again.' });
+      }
     }
 
     if (body.specifications !== undefined && typeof body.specifications === 'object') {
