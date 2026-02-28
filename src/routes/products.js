@@ -3,6 +3,11 @@ import mongoose from 'mongoose';
 import { Listing } from '../models/Listing.js';
 import { Category } from '../models/Category.js';
 import { requireAuth } from '../middleware/auth.js';
+import {
+  getEffectivePromotionType,
+  isPromotionActive,
+  normalizePromotionInput,
+} from '../utils/promotion.js';
 
 const router = Router();
 
@@ -26,6 +31,7 @@ function toListingJson(doc) {
     : d.ownerId?.toString();
   let ownerName;
   let ownerType;
+  let ownerPhone;
   if (d.ownerId && typeof d.ownerId === 'object') {
     ownerType = d.ownerId.userType === 'business' ? 'business' : 'physical';
     if (d.ownerId.userType === 'business' && d.ownerId.businessName) {
@@ -33,7 +39,10 @@ function toListingJson(doc) {
     } else {
       ownerName = [d.ownerId.firstName, d.ownerId.lastName].filter(Boolean).join(' ').trim() || undefined;
     }
+    ownerPhone = d.ownerId.phone && String(d.ownerId.phone).trim() ? d.ownerId.phone.trim() : undefined;
   }
+  const effectivePromotionType = getEffectivePromotionType(d);
+  const promotionActive = isPromotionActive(d);
   return {
     id: d._id.toString(),
     _id: d._id.toString(),
@@ -60,14 +69,11 @@ function toListingJson(doc) {
     ownerId: ownerId || undefined,
     ownerName: ownerName || undefined,
     ownerType: ownerType || undefined,
+    ownerPhone: ownerPhone || undefined,
     status: d.status,
 
-    isFeatured: d.isFeatured,
-    featuredUntil: d.featuredUntil,
-    isHighlighted: d.isHighlighted,
-    highlightUntil: d.highlightUntil,
-    isHomepageTop: d.isHomepageTop,
-    homepageUntil: d.homepageUntil,
+    promotionType: effectivePromotionType,
+    promotionExpiresAt: promotionActive ? d.promotionExpiresAt ?? null : null,
 
     views: d.views,
     saves: d.saves,
@@ -78,6 +84,59 @@ function toListingJson(doc) {
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   };
+}
+
+async function findListingsSortedByPromotion({ match, skip = 0, limit = 50, populateOwner = true }) {
+  const now = new Date();
+  const safeLimit = Math.min(Number(limit) || 50, 100);
+  const safeSkip = Math.max(Number(skip) || 0, 0);
+
+  const ids = await Listing.aggregate([
+    { $match: match },
+    {
+      $addFields: {
+        __promotionActive: {
+          $and: [{ $ne: ['$promotionType', 'none'] }, { $gt: ['$promotionExpiresAt', now] }],
+        },
+      },
+    },
+    {
+      $addFields: {
+        __promotionRank: {
+          $switch: {
+            branches: [
+              {
+                case: { $and: ['__$promotionActive', { $eq: ['$promotionType', 'homepageTop'] }] },
+                then: 0,
+              },
+              {
+                case: { $and: ['__$promotionActive', { $eq: ['$promotionType', 'featured'] }] },
+                then: 1,
+              },
+              {
+                case: { $and: ['__$promotionActive', { $eq: ['$promotionType', 'highlighted'] }] },
+                then: 2,
+              },
+            ],
+            default: 3,
+          },
+        },
+      },
+    },
+    { $sort: { __promotionRank: 1, createdAt: -1 } },
+    { $skip: safeSkip },
+    { $limit: safeLimit },
+    { $project: { _id: 1 } },
+  ]);
+
+  const orderedIds = ids.map((x) => x._id);
+  if (orderedIds.length === 0) return [];
+
+  const q = Listing.find({ _id: { $in: orderedIds } });
+  if (populateOwner) q.populate('ownerId', 'firstName lastName businessName userType');
+  const docs = await q.lean();
+  const byId = new Map(docs.map((d) => [d._id.toString(), d]));
+  return orderedIds.map((id) => byId.get(id.toString())).filter(Boolean);
 }
 
 /**
@@ -96,13 +155,7 @@ router.get('/', async (req, res) => {
       if (slug) filter['category.slug'] = slug;
     }
 
-    const list = await Listing.find(filter)
-      .populate('ownerId', 'firstName lastName businessName userType')
-      .sort({ createdAt: -1 })
-      .skip(Number(skip))
-      .limit(Math.min(Number(limit), 100))
-      .lean();
-
+    const list = await findListingsSortedByPromotion({ match: filter, skip, limit, populateOwner: true });
     res.json(list.map((d) => toListingJson({ ...d })));
   } catch (err) {
     console.error('Products list error:', err);
@@ -127,14 +180,20 @@ router.get('/slug/:slug', async (req, res) => {
     const { type } = req.query;
     let filter = { slug, status: 'active' };
     if (type === 'sell' || type === 'rent') filter.type = type;
-    let listing = await Listing.findOne(filter).populate('ownerId', 'firstName lastName businessName userType').lean();
+    let listing = await Listing.findOne(filter).populate('ownerId', 'firstName lastName businessName userType phone').lean();
     if (!listing && (type === 'sell' || type === 'rent')) {
-      listing = await Listing.findOne({ slug, status: 'active' }).populate('ownerId', 'firstName lastName businessName userType').lean();
+      listing = await Listing.findOne({ slug, status: 'active' }).populate('ownerId', 'firstName lastName businessName userType phone').lean();
     }
     if (!listing) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json(toListingJson(listing));
+    const json = toListingJson(listing);
+    const ownerId = listing.ownerId?._id || listing.ownerId;
+    if (ownerId) {
+      const ownerProductCount = await Listing.countDocuments({ ownerId, status: 'active' });
+      json.ownerProductCount = ownerProductCount;
+    }
+    res.json(json);
   } catch (err) {
     console.error('Product get by slug error:', err);
     res.status(500).json({ error: 'Failed to get product' });
@@ -148,11 +207,7 @@ router.get('/slug/:slug', async (req, res) => {
 router.get('/mine', requireAuth, async (req, res) => {
   try {
     const ownerId = req.user._id || new mongoose.Types.ObjectId(req.user.id);
-    const list = await Listing.find({ ownerId })
-      .populate('ownerId', 'firstName lastName businessName userType')
-      .sort({ createdAt: -1 })
-      .limit(500)
-      .lean();
+    const list = await findListingsSortedByPromotion({ match: { ownerId }, skip: 0, limit: 500, populateOwner: true });
     res.json(list.map((d) => toListingJson({ ...d })));
   } catch (err) {
     console.error('My products list error:', err);
@@ -167,11 +222,17 @@ router.get('/mine', requireAuth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const listing = await Listing.findById(id).populate('ownerId', 'firstName lastName businessName userType').lean();
+    const listing = await Listing.findById(id).populate('ownerId', 'firstName lastName businessName userType phone').lean();
     if (!listing) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json(toListingJson(listing));
+    const json = toListingJson(listing);
+    const ownerId = listing.ownerId?._id || listing.ownerId;
+    if (ownerId) {
+      const ownerProductCount = await Listing.countDocuments({ ownerId, status: 'active' });
+      json.ownerProductCount = ownerProductCount;
+    }
+    res.json(json);
   } catch (err) {
     console.error('Product get error:', err);
     res.status(500).json({ error: 'Failed to get product' });
@@ -269,6 +330,8 @@ router.post('/', requireAuth, async (req, res) => {
     const seoTitle = typeof body.seoTitle === 'string' ? body.seoTitle.trim() : undefined;
     const seoDescription = typeof body.seoDescription === 'string' ? body.seoDescription.trim() : undefined;
 
+    const { promotionType, promotionExpiresAt } = normalizePromotionInput(body);
+
     const listing = await Listing.create({
       title,
       slug,
@@ -289,6 +352,8 @@ router.post('/', requireAuth, async (req, res) => {
       status,
       seoTitle: seoTitle || undefined,
       seoDescription: seoDescription || undefined,
+      promotionType,
+      promotionExpiresAt,
     });
 
     res.status(201).json(toListingJson(listing));
@@ -399,6 +464,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     if (body.status !== undefined) listing.status = body.status;
     if (body.seoTitle !== undefined) listing.seoTitle = typeof body.seoTitle === 'string' ? body.seoTitle.trim() : undefined;
     if (body.seoDescription !== undefined) listing.seoDescription = typeof body.seoDescription === 'string' ? body.seoDescription.trim() : undefined;
+
+    if (body.promotionType !== undefined || body.promotionExpiresAt !== undefined) {
+      const normalized = normalizePromotionInput({
+        promotionType: body.promotionType ?? listing.promotionType,
+        promotionExpiresAt: body.promotionExpiresAt ?? listing.promotionExpiresAt,
+      });
+      listing.promotionType = normalized.promotionType;
+      listing.promotionExpiresAt = normalized.promotionExpiresAt;
+    }
 
     await listing.save();
 

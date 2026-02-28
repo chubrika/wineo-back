@@ -6,6 +6,7 @@ const currencyEnum = ['GEL', 'USD'];
 const priceTypeEnum = ['fixed', 'negotiable'];
 const conditionEnum = ['new', 'used'];
 const statusEnum = ['active', 'sold', 'rented', 'expired'];
+const promotionTypeEnum = ['none', 'highlighted', 'featured', 'homepageTop'];
 
 const listingSchema = new mongoose.Schema(
   {
@@ -136,12 +137,12 @@ const listingSchema = new mongoose.Schema(
       default: 'active',
     },
 
-    isFeatured: { type: Boolean, default: false },
-    featuredUntil: { type: Date, default: null },
-    isHighlighted: { type: Boolean, default: false },
-    highlightUntil: { type: Date, default: null },
-    isHomepageTop: { type: Boolean, default: false },
-    homepageUntil: { type: Date, default: null },
+    promotionType: {
+      type: String,
+      enum: { values: promotionTypeEnum, message: `promotionType must be one of: ${promotionTypeEnum.join(', ')}` },
+      default: 'none',
+    },
+    promotionExpiresAt: { type: Date, default: null },
 
     views: { type: Number, default: 0 },
     saves: { type: Number, default: 0 },
@@ -161,7 +162,7 @@ const listingSchema = new mongoose.Schema(
 listingSchema.index({ type: 1 });
 listingSchema.index({ 'category.slug': 1 });
 listingSchema.index({ 'location.region': 1 });
-listingSchema.index({ isFeatured: 1, featuredUntil: 1 });
+listingSchema.index({ promotionType: 1, promotionExpiresAt: 1 });
 listingSchema.index({ createdAt: -1 });
 listingSchema.index({ status: 1, type: 1 });
 listingSchema.index({ ownerId: 1, status: 1 });
