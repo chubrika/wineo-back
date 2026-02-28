@@ -4,9 +4,13 @@
   "description": "Backend API for Wineo front",
   "type": "module",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "build": "node -e \"console.log('Build complete')\""
   },
   "keywords": [
     "wineo",
