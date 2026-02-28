@@ -2,10 +2,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const corsOriginRaw = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:4200,https://wineo.vercel.app/';
+const corsOriginRaw = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:4200,https://wineo.vercel.app,https://wineo.ge';
 const corsOrigin = corsOriginRaw.includes(',')
-  ? corsOriginRaw.split(',').map((s) => s.trim()).filter(Boolean)
-  : corsOriginRaw;
+  ? corsOriginRaw.split(',').map((s) => s.trim().replace(/\/$/, '')).filter(Boolean)
+  : [corsOriginRaw.replace(/\/$/, '')].filter(Boolean);
 
 export const config = {
   port: Number(process.env.PORT) || 4000,
