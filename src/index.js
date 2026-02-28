@@ -34,13 +34,16 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+const host = process.env.HOST || '0.0.0.0';
+const port = config.port;
+
+app.listen(port, host, () => {
+  console.log(`Wineo API running at http://${host}:${port}`);
+});
+
 connectDb()
-  .then(() => {
-    app.listen(config.port, () => {
-      console.log(`Wineo API running at http://localhost:${config.port}`);
-    });
-  })
+  .then(() => {})
   .catch((err) => {
     console.error('Failed to connect to MongoDB:', err.message);
-    process.exit(1);
+    console.error('App is running but database operations will fail. Set MONGODB_URI in Render → Environment.');
   });
