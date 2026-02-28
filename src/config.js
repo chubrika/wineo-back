@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 
+// Load base .env, then .env.development or .env.production if NODE_ENV is set
 dotenv.config();
+const nodeEnv = process.env.NODE_ENV;
+if (nodeEnv === 'development' || nodeEnv === 'production') {
+  dotenv.config({ path: `.env.${nodeEnv}` });
+}
 
 const corsOriginRaw = process.env.CORS_ORIGIN || 'http://localhost:3000,http://localhost:4200,https://wineo.vercel.app,https://wineo.ge';
 const corsOrigin = corsOriginRaw.includes(',')
