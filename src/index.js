@@ -41,14 +41,15 @@ app.use((err, req, res, next) => {
 const host = process.env.HOST || '0.0.0.0';
 const port = config.port;
 
-// First connect DB, then start server
+// Start server first so the process stays alive (e.g. on Render).
+// Then connect DB in the background; routes will fail until DB is connected.
+app.listen(port, host, () => {
+  console.log(`Wineo API running at http://${host}:${port}`);
+});
+
 connectDb()
-  .then(() => {
-    app.listen(port, host, () => {
-      console.log(`Wineo API running at http://${host}:${port}`);
-    });
-  })
+  .then(() => console.log('MongoDB connected'))
   .catch((err) => {
-    console.error('Failed to connect to MongoDB:', err);
-    console.error('Set MONGODB_URI in Render → Environment Variables.');
+    console.error('MongoDB connection failed:', err.message);
+    console.error('Set MONGODB_URI in Render → Environment Variables. API will run but DB routes will fail.');
   });
